@@ -82,3 +82,14 @@ describe("combo catalog policy", () => {
     expect(tried[0]).toBe("cc/claude-fable-5-2(xhigh)");
   });
 });
+
+describe("fable launch promo", () => {
+  it("halves Fable cost before the deadline and restores it after", async () => {
+    const m = await import("../../open-sse/config/claudeEffortCatalog.js");
+    const before = Date.parse("2026-11-10T20:00:00Z");
+    const after = Date.parse("2026-11-17T08:00:00Z");
+    expect(m.catalogEntry("cc/claude-fable-5-2(low)", before).cost).toBeCloseTo(1.55, 2);
+    expect(m.catalogEntry("cc/claude-fable-5-2(low)", after).cost).toBeCloseTo(3.10, 2);
+    expect(m.catalogEntry("cc/claude-opus-5-5(high)", before).promo).toBe(false);
+  });
+});

@@ -68,13 +68,30 @@ export function parseCatalogMember(model) {
   return { base, effort, explicitEffort: !!effortRaw };
 }
 
+// Fable 5.2 launch offer on Pro / standard Team seats (anthropic.com/claude-fable-and-mythos-5-2,
+// help article 17506494): Fable included up to 50% of weekly limits through 2026-11-16 23:59 PT.
+// While it lasts, Fable's cost counts at a fraction so the router prefers it. Env overrides:
+// COMBO_FABLE_PROMO_UNTIL (ISO date, empty disables) and COMBO_FABLE_PROMO_FACTOR (0-1).
+const PROMO_UNTIL_DEFAULT = "2026-11-17T07:59:00Z";
+export function fablePromo(now = Date.now()) {
+  const env = typeof process !== "undefined" ? process.env : {};
+  const untilRaw = env.COMBO_FABLE_PROMO_UNTIL ?? PROMO_UNTIL_DEFAULT;
+  if (!untilRaw) return null;
+  const until = Date.parse(untilRaw);
+  if (!Number.isFinite(until) || now > until) return null;
+  const f = Number(env.COMBO_FABLE_PROMO_FACTOR ?? 0.5);
+  return { until, factor: Number.isFinite(f) && f >= 0 && f <= 1 ? f : 0.5 };
+}
+
 /** Catalog entry for a combo member, or null when the model is not in the catalog. */
-export function catalogEntry(model) {
+export function catalogEntry(model, now = Date.now()) {
   const { base, effort } = parseCatalogMember(model);
   const row = CLAUDE_EFFORT_SCORES[base]?.[effort];
   if (!row) return null;
-  const [index, cost, minutes] = row;
-  return { model, base, effort, family: FAMILY[base]?.name || base, index, cost, minutes };
+  const [index, listCost, minutes] = row;
+  const promo = base.startsWith("claude-fable") ? fablePromo(now) : null;
+  const cost = promo ? +(listCost * promo.factor).toFixed(4) : listCost;
+  return { model, base, effort, family: FAMILY[base]?.name || base, index, cost, listCost, minutes, promo: !!promo };
 }
 
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -90,7 +107,7 @@ export function describeCatalogMember(model) {
   const subTxt = sub
     ? " " + cap([sub[0] != null ? `código e terminal ${pct(sub[0])}` : null, `trabalho de escritório ${pct(sub[1])}`, `conhecimento factual ${pct(sub[2])}`].filter(Boolean).join(", ")) + "."
     : "";
-  return `${e.family}, ${EFFORT[e.effort]}. ${cap(fam.blurb)}. Índice AA ${e.index} (escala de 19 a 65 entre estas opções), cerca de US$ ${fmtUsd(e.cost)} e ${String(e.minutes).replace(".", ",")} min por tarefa de benchmark.${subTxt}`;
+  return `${e.family}, ${EFFORT[e.effort]}. ${cap(fam.blurb)}. Índice AA ${e.index} (escala de 19 a 65 entre estas opções), cerca de US$ ${fmtUsd(e.listCost)} e ${String(e.minutes).replace(".", ",")} min por tarefa de benchmark.${subTxt}${e.promo ? " Promoção de lançamento: até 16/11/2026 23:59 PT o Fable está incluso na assinatura (até metade do limite semanal), então conta como mais barato e deve ser preferido em tarefas médias e difíceis." : ""}`;
 }
 
 /** Members of `models` dominated by another member (same or higher index for less cost). */
