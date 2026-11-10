@@ -31,7 +31,7 @@ export default function SmartPolicyModal({
   }, [isOpen, currentPolicy, currentThreshold]);
 
   const handleSave = () => {
-    const finalThreshold = selectedPolicy === "custom"
+    const finalThreshold = (selectedPolicy === "custom" || selectedPolicy === "complexity")
       ? threshold / 100
       : selectedPolicy === "smart"
         ? 0.8
@@ -70,6 +70,14 @@ export default function SmartPolicyModal({
       badgeVariant: "default",
       icon: "refresh",
       desc: "Evaluates System One independently on every prompt without session stickiness.",
+    },
+    {
+      id: "complexity",
+      title: "Complexity Tiers",
+      badge: `Simple · Normal · Heavy ≥${threshold}%`,
+      badgeVariant: "success",
+      icon: "stairs",
+      desc: "Classifies every new user message as simple, normal or heavy and sends it to that tier's member (e.g. Haiku, Sonnet, Opus/Fable). Tool loops keep the chosen model; below the threshold it uses the normal tier. Refusals fail over to the next member.",
     },
     {
       id: "custom",
@@ -141,7 +149,7 @@ export default function SmartPolicyModal({
                 </p>
 
                 {/* Custom Threshold Slider & Chips */}
-                {p.id === "custom" && isSelected && (
+                {(p.id === "custom" || p.id === "complexity") && isSelected && (
                   <div
                     className="mt-3 pl-6 pt-3 border-t border-border/40 flex flex-col gap-2.5"
                     onClick={(e) => e.stopPropagation()}

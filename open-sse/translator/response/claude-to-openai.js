@@ -147,10 +147,9 @@ export function claudeToOpenAIResponse(chunk, state) {
         // explanation as the message text so the client shows *why* the turn is
         // empty instead of a blank reply.
         const refusalNote = chunk.delta.stop_reason === "refusal" && chunk.delta.stop_details?.explanation;
-        if (refusalNote) {
-          results.push(createChunk(state, { content: refusalNote }));
-        }
-        const finalChunk = createChunk(state, {}, state.finishReason);
+        // The note rides in the SAME frame as finish_reason "content_filter", so a combo's
+        // stream peek sees the refusal and can fail over instead of committing to it.
+        const finalChunk = createChunk(state, refusalNote ? { content: refusalNote } : {}, state.finishReason);
 
         if (state.usage) {
           // Build OpenAI usage from the merged state (cache from message_start +

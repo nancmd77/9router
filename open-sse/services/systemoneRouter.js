@@ -257,3 +257,82 @@ export function pruneStickyComboSessions() {
 export function resetStickyComboStore() {
   comboSessionModelStore.clear();
 }
+
+// ─── Complexity routing (hark) ──────────────────────────────────────────────
+// Instead of asking the router "which of these model ids fits" (it only sees bare
+// ids and spreads its probability across them), ask it how complex the latest
+// request is, then map the tier onto the combo's own members.
+
+export const COMPLEXITY_TIERS = ["simples", "normal", "pesado"];
+
+export const COMPLEXITY_CRITERIA = {
+  simples: "Conversa ou saudação, pergunta curta de fato, confirmação, ajuste pequeno, ação de um passo, resumo curto. Não exige raciocínio longo nem código novo.",
+  normal: "Tarefa com alguns passos: escrever ou corrigir um trecho de código, pesquisar e resumir, montar um texto médio, usar algumas ferramentas, seguir um procedimento conhecido.",
+  pesado: "Problema difícil ou crítico: arquitetura, depuração difícil, refatoração grande, plano longo com muitas etapas, análise profunda, decisão difícil de desfazer, produção ou dados importantes.",
+};
+
+const TIER_PATTERNS = [
+  ["pesado", /(opus|fable|ultra|-pro\b|pro-|\bo[13]\b|gpt-\d[\d.]*-sol|argon-high|thinking|reasoner)/i],
+  ["simples", /(haiku|mini|nano|lite|small|flash-low|8b|9b|mercury)/i],
+  ["normal", /(sonnet|flash|medium|gpt|qwen|deepseek|gemini|oss)/i],
+];
+
+/** Tier of a combo member, guessed from its id. Unknown ids are "normal". */
+export function modelTier(model) {
+  const id = String(model || "");
+  for (const [tier, re] of TIER_PATTERNS) if (re.test(id)) return tier;
+  return "normal";
+}
+
+/** Combo members of one tier, in combo order. */
+export function membersOfTier(models, tier) {
+  return (models || []).filter((m) => modelTier(m) === tier);
+}
+
+/**
+ * Order the combo for a complexity tier: the tier's members first (combo order),
+ * then the next tiers up (more capable) and finally the ones below.
+ */
+export function orderModelsByTier(models, tier) {
+  const idx = COMPLEXITY_TIERS.indexOf(tier);
+  const order = idx < 0 ? COMPLEXITY_TIERS : [
+    tier,
+    ...COMPLEXITY_TIERS.slice(idx + 1),
+    ...COMPLEXITY_TIERS.slice(0, idx).reverse(),
+  ];
+  const out = [];
+  for (const t of order) for (const m of membersOfTier(models, t)) if (!out.includes(m)) out.push(m);
+  for (const m of models || []) if (!out.includes(m)) out.push(m);
+  return out;
+}
+
+/** Turn the router's tier answer into { tier, choice, confidence, probabilities }. */
+export function tierRouteToChoice(models, route, { threshold = 0.5, fallbackTier = "normal" } = {}) {
+  if (!route) return null;
+  const tier = COMPLEXITY_TIERS.includes(route.choice) ? route.choice : null;
+  const conf = typeof route.confidence === "number" ? route.confidence : null;
+  let finalTier = tier && (conf === null || conf >= threshold) ? tier : fallbackTier;
+  // A tier with no member in this combo: move to the nearest tier that has one.
+  if (membersOfTier(models, finalTier).length === 0) {
+    const ordered = orderModelsByTier(models, finalTier);
+    finalTier = modelTier(ordered[0]);
+  }
+  const ordered = orderModelsByTier(models, finalTier);
+  return { tier: finalTier, routerTier: tier, choice: ordered[0], ordered, confidence: conf, probabilities: route.probabilities || null };
+}
+
+/**
+ * True when the request continues a turn already in progress (the last message is a
+ * tool result or an assistant tool call), not a new message from the user.
+ */
+export function isToolContinuation(body) {
+  const msgs = Array.isArray(body?.messages) ? body.messages : (Array.isArray(body?.input) ? body.input : null);
+  if (!msgs || msgs.length === 0) return false;
+  const last = msgs[msgs.length - 1];
+  if (!last) return false;
+  if (last.role === "tool" || last.type === "function_call_output") return true;
+  if (last.role === "assistant" && Array.isArray(last.tool_calls) && last.tool_calls.length) return true;
+  if (last.role === "user" && Array.isArray(last.content) && last.content.length > 0
+      && last.content.every((p) => p?.type === "tool_result")) return true;
+  return false;
+}
