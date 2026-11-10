@@ -382,10 +382,11 @@ export function orderCatalogFallback(models, choice) {
 }
 
 /** Cheapest member whose index reaches `target` (or the strongest when none does). */
-export function cheapestReaching(models, target) {
-  const entries = (models || []).map(catalogEntry).filter(Boolean);
+export function cheapestReaching(models, target, { listPrice = false } = {}) {
+  const entries = (models || []).map((m) => catalogEntry(m)).filter(Boolean);
   if (!entries.length) return null;
-  const ok = entries.filter((e) => e.index >= target).sort((a, b) => a.cost - b.cost);
+  const c = (e) => (listPrice ? e.listCost : e.cost);
+  const ok = entries.filter((e) => e.index >= target).sort((a, b) => c(a) - c(b));
   return (ok[0] || entries.sort((a, b) => b.index - a.index)[0]).model;
 }
 
@@ -393,7 +394,8 @@ export function cheapestReaching(models, target) {
  * Decide the member from the decider's answer:
  * - top probability ≥ threshold → that member;
  * - else probability-weighted expected index → cheapest member reaching it;
- * - no answer → `fallbackModel` (or the cheapest member reaching index 42, roughly Sonnet high).
+ * - no answer → `fallbackModel` (or the cheapest member reaching index 42 at list price, roughly
+ *   Sonnet high; the Fable promo never changes this default).
  */
 export function catalogRouteToChoice(models, route, { threshold = 0.5, fallbackModel = null } = {}) {
   const known = (models || []).filter((m) => catalogEntry(m));
@@ -415,7 +417,7 @@ export function catalogRouteToChoice(models, route, { threshold = 0.5, fallbackM
   }
   if (!choice && route?.choice && models.includes(route.choice)) { choice = route.choice; how = "decider (confiança baixa)"; }
   if (!choice) {
-    choice = (fallbackModel && models.includes(fallbackModel)) ? fallbackModel : (cheapestReaching(known, 42) || models[0]);
+    choice = (fallbackModel && models.includes(fallbackModel)) ? fallbackModel : (cheapestReaching(known, 42, { listPrice: true }) || models[0]);
     how = how === "sem resposta" ? "padrão" : how;
   }
   return { choice, how, expected, confidence: conf, ordered: orderCatalogFallback(models, choice) };

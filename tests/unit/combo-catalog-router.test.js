@@ -35,7 +35,7 @@ describe("catalog data", () => {
   });
   it("has AA numbers for every member", () => {
     for (const m of MODELS) expect(catalogEntry(m)).not.toBeNull();
-    expect(catalogEntry("cc/claude-fable-5-2(max)")).toMatchObject({ index: 65, cost: 26.54 });
+    expect(catalogEntry("cc/claude-fable-5-2(max)")).toMatchObject({ index: 65, listCost: 26.54 });
   });
   it("describes every member for the decider and flags dominated ones", () => {
     const c = buildCatalogCriteria(MODELS);
