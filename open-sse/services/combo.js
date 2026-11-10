@@ -419,13 +419,14 @@ export async function handleComboChat({
         } catch (err) {
           log.warn("COMBO", `smart-router [${policy}] error`, { error: err?.message || String(err) });
         }
+        const decider = route?.routerModel ? ` · decider ${route.routerModel}${route.latencyMs != null ? ` ${route.latencyMs}ms` : ""}` : " · decider sem resposta";
         if (isCatalog) {
           picked = catalogRouteToChoice(models, route, { threshold: tierThreshold });
-          log.info("COMBO", `smart-router [catalog] ${picked.how} (confidence: ${picked.confidence ?? "N/A"}${picked.expected != null ? `, índice esperado ${picked.expected.toFixed(1)}` : ""}) → ${picked.choice}`);
+          log.info("COMBO", `smart-router [catalog] ${picked.how} (confidence: ${picked.confidence ?? "N/A"}${picked.expected != null ? `, índice esperado ${picked.expected.toFixed(1)}` : ""}) → ${picked.choice}${decider}`);
         } else {
           picked = tierRouteToChoice(models, route, { threshold: tierThreshold })
             || tierRouteToChoice(models, { choice: "normal", confidence: null }, { threshold: tierThreshold });
-          log.info("COMBO", `smart-router [complexity] ${picked.routerTier ?? "sem resposta"} (confidence: ${picked.confidence ?? "N/A"}) → ${picked.tier} → ${picked.choice}`);
+          log.info("COMBO", `smart-router [complexity] ${picked.routerTier ?? "sem resposta"} (confidence: ${picked.confidence ?? "N/A"}) → ${picked.tier} → ${picked.choice}${decider}`);
         }
         rotatedModels = picked.ordered;
         if (sessionId) {
