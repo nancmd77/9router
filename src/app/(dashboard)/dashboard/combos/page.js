@@ -57,6 +57,7 @@ const STRATEGY_OPTIONS = [
 function getPolicyBadgeLabel(strategy = {}) {
   const policy = strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart");
   if (policy === "strict") return "Strict Lock";
+  if (policy === "complexity") return "Complexity Tiers";
   if (policy === "per-turn") return "Per-Turn";
   if (policy === "custom") {
     const raw = strategy.confidenceThreshold;

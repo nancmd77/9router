@@ -130,6 +130,7 @@ export function scanSSEBuffer(text, state = { sawContent: false, finishReason: n
   state.pending = lines.pop();
   for (const line of lines) {
     const info = inspectSSELine(line);
+    if (info.content && !info.finishReason) state.contentBeforeFinish = true;
     if (info.content) state.sawContent = true;
     if (info.finishReason) state.finishReason = info.finishReason;
   }
@@ -190,6 +191,11 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
     textBuf += decoder.decode(value, { stream: true });
     scanSSEBuffer(textBuf, state);
     textBuf = state.pending; // only the not-yet-complete line carries over
+    // A refusal (finish "content_filter") seen before any other content: its frame may
+    // carry the provider's explanation as text, which is not an answer.
+    if (state.finishReason === OPENAI_FINISH.CONTENT_FILTER && !state.contentBeforeFinish) {
+      return settle({ outcome: "refusal", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
+    }
     if (state.sawContent) {
       return settle({ outcome: "content", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }

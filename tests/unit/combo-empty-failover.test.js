@@ -351,11 +351,26 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       });
     });
   }
-  it("OpenAI chat / Anthropic clients: a content_filter finish is NOT retried", async () => {
+  it("hark: a content_filter / refusal finish fails over to the next member", async () => {
     for (const sourceFormat of [FORMATS.OPENAI, FORMATS.CLAUDE]) {
-      const { tried } = await combo([[ROLE, FILTER_STOP, DONE], [ROLE, C("from-m1"), STOP, DONE]], { sourceFormat });
-      expect(tried).toEqual(["openai/m0"]);
+      const { out, tried } = await combo([[ROLE, FILTER_STOP, DONE], [ROLE, C("from-m1"), STOP, DONE]], { sourceFormat });
+      expect(tried).toEqual(["openai/m0", "openai/m1"]);
+      expect(out).toContain("from-m1");
     }
+  });
+  it("hark: a refusal whose frame carries the explanation text still fails over", async () => {
+    const NOTE_FILTER = `data: {"id":"x","choices":[{"index":0,"delta":{"content":"This request triggered restrictions"},"finish_reason":"content_filter"}]}\n\n`;
+    const { out, tried } = await combo([[ROLE, NOTE_FILTER, DONE], [ROLE, C("from-m1"), STOP, DONE]]);
+    expect(tried).toEqual(["openai/m0", "openai/m1"]);
+    expect(out).toContain("from-m1");
+    expect(out).not.toContain("triggered restrictions");
+  });
+  it("hark: COMBO_REFUSAL_FAILOVER=0 restores no-retry on content_filter", async () => {
+    process.env.COMBO_REFUSAL_FAILOVER = "0";
+    try {
+      const { tried } = await combo([[ROLE, FILTER_STOP, DONE], [ROLE, C("from-m1"), STOP, DONE]]);
+      expect(tried).toEqual(["openai/m0"]);
+    } finally { delete process.env.COMBO_REFUSAL_FAILOVER; }
   });
 
   // Responses provider + Responses client: same-format passthrough of Responses events.
@@ -388,10 +403,10 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       expect((await combo([[CREATED, FC, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0"]);
       expect((await combo([[CREATED, REASON, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0", "openai/m1"]);
     });
-    it("response.incomplete (content_filter) is NOT retried", async () => {
+    it("hark: response.incomplete (content_filter) fails over to the next member", async () => {
       const { out, tried } = await combo([[CREATED, FILTERED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP);
-      expect(tried).toEqual(["openai/m0"]);
-      expect(out).toContain('"reason":"content_filter"');
+      expect(tried).toEqual(["openai/m0", "openai/m1"]);
+      expect(out).toContain("from-m1");
     });
   });
 });

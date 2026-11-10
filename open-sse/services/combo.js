@@ -13,6 +13,9 @@ import {
   setStickyComboModel,
   clearStickyComboSession,
   orderModelsByChoice,
+  tierRouteToChoice,
+  isToolContinuation,
+  orderModelsByTier,
 } from "./systemoneRouter.js";
 
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
@@ -368,6 +371,10 @@ export async function handleComboChat({
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
+  let complexityMode = false;
+  const keepWinner = (m) => {
+    if (complexityMode && sessionId && m !== activeStickyModel) setStickyComboModel(comboName, sessionId, m);
+  };
 
   if (comboStrategy === "smart") {
     const policy = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
@@ -385,11 +392,44 @@ export async function handleComboChat({
       if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
     }
 
-    if (!isPerTurn && sessionId) {
+    const isComplexity = policy === "complexity";
+    complexityMode = isComplexity;
+
+    if (isComplexity) {
+      // Complexity routing (hark): classify each new user message as simples / normal /
+      // pesado and send it to that tier's member. While the same turn runs its tool loop,
+      // keep the member chosen for it (no router call, warm prompt cache).
+      const ct = Number(confidenceThreshold);
+      const tierThreshold = Number.isFinite(ct) && ct > 0 && ct < 1 ? ct : 0.5;
+      const sticky = sessionId ? getStickyComboModel(comboName, sessionId, models) : null;
+      if (sticky && isToolContinuation(body)) {
+        rotatedModels = [sticky, ...orderModelsByTier(models.filter((m) => m !== sticky), "normal")];
+        activeStickyModel = sticky;
+        log.info("COMBO", `smart-router [complexity] tool loop, kept ${sticky}`);
+      } else if (typeof resolveSmartChoice === "function") {
+        let picked = null;
+        try {
+          picked = tierRouteToChoice(models, await resolveSmartChoice(body, models), { threshold: tierThreshold });
+        } catch (err) {
+          log.warn("COMBO", `smart-router [complexity] error`, { error: err?.message || String(err) });
+        }
+        if (!picked) picked = tierRouteToChoice(models, { choice: "normal", confidence: null }, { threshold: tierThreshold });
+        rotatedModels = picked.ordered;
+        log.info("COMBO", `smart-router [complexity] ${picked.routerTier ?? "sem resposta"} (confidence: ${picked.confidence ?? "N/A"}) → ${picked.tier} → ${picked.choice}`);
+        if (sessionId) {
+          setStickyComboModel(comboName, sessionId, picked.choice);
+          activeStickyModel = picked.choice;
+        }
+      }
+    }
+
+    if (!isComplexity && !isPerTurn && sessionId) {
       activeStickyModel = getStickyComboModel(comboName, sessionId, models);
     }
 
-    if (activeStickyModel) {
+    if (isComplexity) {
+      // handled above
+    } else if (activeStickyModel) {
       if (isStrict) {
         // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
         rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
@@ -520,20 +560,26 @@ export async function handleComboChat({
           }
 
           log.info("COMBO", `Model ${modelStr} succeeded`);
+          keepWinner(modelStr);
           return result;
         }
 
         if (peeked.outcome === "content") {
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          keepWinner(modelStr);
           return peeked.response;
         }
 
         // Empty generation. Fall through to the next candidate unless this is a legitimately
         // empty class (content filter) or the last candidate — in which case return the
         // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
-        const reasonLabel = peeked.finishReason || "no-content";
+        const reasonLabel = peeked.outcome === "refusal" ? "refusal" : (peeked.finishReason || "no-content");
         const isLast = i === rotatedModels.length - 1;
-        if (isNoRetryFinish(peeked.finishReason) || isLast) {
+        // hark: a refusal / content filter from one member is that model's classifier,
+        // not the request's fate — other members (another family or tier) often answer.
+        // Set COMBO_REFUSAL_FAILOVER=0 to restore upstream's no-retry behaviour.
+        const refusalFailover = process.env.COMBO_REFUSAL_FAILOVER !== "0";
+        if ((isNoRetryFinish(peeked.finishReason) && !refusalFailover) || isLast) {
           log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
           return peeked.response;
         }

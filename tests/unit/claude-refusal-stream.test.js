@@ -53,6 +53,12 @@ describe("claude-to-openai: refusal stop_reason", () => {
     expect(text).toBe(EXPLANATION);
   });
 
+  it("hark: puts the explanation in the same frame as finish_reason", () => {
+    const { out } = runStream(refusalStream);
+    const final = out.find(c => c.choices?.[0]?.finish_reason === "content_filter");
+    expect(final.choices[0].delta.content).toBe(EXPLANATION);
+  });
+
   it("keeps usage on the final chunk (prompt tokens were billed)", () => {
     const { out } = runStream(refusalStream);
     const final = out.find(c => c.choices?.[0]?.finish_reason === "content_filter");

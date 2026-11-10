@@ -8,6 +8,7 @@ import {
   extractPromptState,
   buildChoiceCriteria,
   parseSystemOneRouteAnswer,
+  COMPLEXITY_CRITERIA,
 } from "open-sse/services/systemoneRouter.js";
 
 /**
@@ -32,6 +33,7 @@ export async function resolveSmartChoice({
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
   log,
   timeoutMs = DEFAULT_SYSTEMONE_TIMEOUT_MS,
+  mode = "model",
 }) {
   if (!Array.isArray(models) || models.length <= 1) return null;
 
@@ -45,7 +47,8 @@ export async function resolveSmartChoice({
     return null;
   }
 
-  const criteria = buildChoiceCriteria(models);
+  const isComplexity = mode === "complexity";
+  const criteria = isComplexity ? { ...COMPLEXITY_CRITERIA } : buildChoiceCriteria(models);
   if (Object.keys(criteria).length === 0) return null;
 
   try {
@@ -69,7 +72,9 @@ export async function resolveSmartChoice({
       questions: {
         route: {
           type: "choice",
-          instructions: "Which of these configured models is the most appropriate for this request?",
+          instructions: isComplexity
+            ? "Classify how complex this latest request is for an AI agent to handle well: simples, normal or pesado. Judge the work the request needs, not its length."
+            : "Which of these configured models is the most appropriate for this request?",
           criteria,
         },
       },
