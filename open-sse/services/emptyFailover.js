@@ -193,7 +193,7 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
     textBuf = state.pending; // only the not-yet-complete line carries over
     // A refusal (finish "content_filter") seen before any other content: its frame may
     // carry the provider's explanation as text, which is not an answer.
-    if (state.finishReason === OPENAI_FINISH.CONTENT_FILTER && !state.contentBeforeFinish) {
+    if (state.finishReason === OPENAI_FINISH.CONTENT_FILTER && state.sawContent && !state.contentBeforeFinish) {
       return settle({ outcome: "refusal", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }
     if (state.sawContent) {
