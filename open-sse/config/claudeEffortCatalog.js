@@ -5,25 +5,36 @@
 // On a Claude Code subscription the "cost" is quota use, not a bill: still a fair
 // measure of how much of the limit an option burns.
 
-export const CATALOG_SOURCE = "Artificial Analysis Intelligence Index v5.0.1 (2026-11-10)";
+// Sub-scores (Terminal-Bench 4.0, GDPval-AA, AA-Omniscience accuracy) and the usage
+// notes come from the OpenRouter model pages (openrouter.ai/anthropic/<model>), read
+// 2026-11-10; they are Artificial Analysis runs of the earlier index version.
+export const CATALOG_SOURCE = "Artificial Analysis Intelligence Index v5.0.1 e páginas do OpenRouter (2026-11-10)";
 
 const FAMILY = {
   "claude-haiku-5-5": {
     name: "Haiku 5.5",
-    blurb: "o menor e mais barato da família. Bom para conversa, saudação, perguntas curtas, resumos, classificação, extração e passos simples com ferramentas. Fraco em código grande, depuração difícil e conhecimento factual raro",
+    blurb: "o menor, mais barato e mais rápido. Feito para trabalho de alto volume: conversa, saudação, perguntas curtas, resumos, classificação, extração, subagentes e uso de navegador. Pouco conhecimento factual raro, mas admite quando não sabe. Fraco em código grande e depuração difícil",
   },
   "claude-sonnet-5-5": {
     name: "Sonnet 5.5",
-    blurb: "modelo médio, forte em código e uso de terminal (Terminal-Bench 4.0 64% no max), mas gasta muitos tokens; abaixo do Opus em conhecimento factual e raciocínio científico",
+    blurb: "para trabalho do dia a dia bem delimitado: criar funcionalidades, corrigir bugs, documentos, slides e planilhas bem acabados, texto claro. Forte em terminal no effort alto, mas gasta muitos tokens; abaixo do Opus em conhecimento factual e ciência",
   },
   "claude-opus-5-5": {
     name: "Opus 5.5",
-    blurb: "modelo grande, melhor que Sonnet em conhecimento, raciocínio e trabalho de escritório com documentos (AA-Briefcase, GDPval); bom em agente e terminal",
+    blurb: "o modelo principal recomendado pela Anthropic para a maior parte do código e do trabalho intelectual: mudanças em vários passos em bases de código grandes, revisão de código e caça a bugs, análise financeira e científica, leitura de gráficos e prints. Mais conhecimento factual que Sonnet e Haiku; resolve em menos passos",
   },
   "claude-fable-5-2": {
     name: "Fable 5.2",
-    blurb: "o mais forte disponível (1º no índice AA). Ideal para arquitetura, depuração difícil, refatoração grande, planos longos e análise profunda. Mais caro por token ($8/$40) e o mais lento; os classificadores de segurança dele recusam alguns temas de segurança/cyber",
+    blurb: "o mais capaz (1º no índice AA), para os problemas mais ambiciosos e abertos: migrações grandes, arquitetura, depuração muito difícil, pesquisa de ponta. A Anthropic recomenda o Opus 5.5 no dia a dia e o Fable só para o que o Opus não resolve. O mais caro por token ($8/$40) e o mais lento; os classificadores dele recusam alguns temas de segurança/cyber",
   },
+};
+
+// [Terminal-Bench 4.0, GDPval-AA, AA-Omniscience accuracy] in % (OpenRouter pages).
+export const CLAUDE_EFFORT_SUBSCORES = {
+  "claude-haiku-5-5": { low: [12.6, 31.5, 30.4], medium: [15.2, 39.1, 31.7], high: [21.7, 46.2, 31.8], xhigh: [29.3, 51.1, 33.8], max: [32.8, 56.4, 34.7] },
+  "claude-sonnet-5-5": { low: [20.7, 34.1, 46.0], medium: [29.8, 41.4, 45.8], high: [43.9, 52.8, 50.3], xhigh: [57.1, 61.8, 50.9], max: [63.6, 66.9, 51.5] },
+  "claude-opus-5-5": { low: [31.3, 37.0, 63.3], medium: [52.5, 54.6, 63.9], high: [56.6, 60.7, 64.8], xhigh: [59.6, 66.8, 65.5], max: [59.6, 68.3, 65.5] },
+  "claude-fable-5-2": { max: [null, 66.6, 79.1] },
 };
 
 const EFFORT = {
@@ -66,6 +77,7 @@ export function catalogEntry(model) {
   return { model, base, effort, family: FAMILY[base]?.name || base, index, cost, minutes };
 }
 
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 function fmtUsd(n) { return n < 1 ? n.toFixed(2).replace(".", ",") : n.toFixed(2).replace(".", ","); }
 
 /** Plain-language description the decider reads for one member. */
@@ -73,7 +85,12 @@ export function describeCatalogMember(model) {
   const e = catalogEntry(model);
   if (!e) return null;
   const fam = FAMILY[e.base];
-  return `${e.family}, ${EFFORT[e.effort]}. ${fam.blurb}. Índice AA ${e.index} (escala de 19 a 65 entre estas opções), cerca de US$ ${fmtUsd(e.cost)} e ${String(e.minutes).replace(".", ",")} min por tarefa de benchmark.`;
+  const sub = CLAUDE_EFFORT_SUBSCORES[e.base]?.[e.effort];
+  const pct = (v) => `${String(v).replace(".", ",")}%`;
+  const subTxt = sub
+    ? " " + cap([sub[0] != null ? `código e terminal ${pct(sub[0])}` : null, `trabalho de escritório ${pct(sub[1])}`, `conhecimento factual ${pct(sub[2])}`].filter(Boolean).join(", ")) + "."
+    : "";
+  return `${e.family}, ${EFFORT[e.effort]}. ${cap(fam.blurb)}. Índice AA ${e.index} (escala de 19 a 65 entre estas opções), cerca de US$ ${fmtUsd(e.cost)} e ${String(e.minutes).replace(".", ",")} min por tarefa de benchmark.${subTxt}`;
 }
 
 /** Members of `models` dominated by another member (same or higher index for less cost). */
