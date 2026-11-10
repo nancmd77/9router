@@ -83,6 +83,7 @@ export async function resolveSmartChoice({
       },
     };
 
+    const startedAt = Date.now();
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = setTimeout(() => reject(new Error(`System One router timed out after ${timeoutMs}ms`)), timeoutMs);
@@ -104,7 +105,7 @@ export async function resolveSmartChoice({
     }
 
     if (!result?.success || !result.response) {
-      log?.warn?.("COMBO", `smart-router: evaluation failed (${result?.status || "error"})`);
+      log?.warn?.("COMBO", `smart-router: evaluation failed on ${targetModel} (${result?.status || "error"})`);
       return null;
     }
 
@@ -115,7 +116,7 @@ export async function resolveSmartChoice({
       return null;
     }
 
-    return route;
+    return { ...route, routerModel: targetModel, latencyMs: Date.now() - startedAt };
   } catch (err) {
     log?.warn?.("COMBO", `smart-router: evaluation aborted (${err?.message || String(err)})`);
     return null;
