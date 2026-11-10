@@ -4,6 +4,8 @@
  * before generation begins, with session stickiness for prompt-cache retention.
  */
 
+import { catalogEntry, describeCatalogMember, dominatedMembers, CATALOG_SOURCE } from "../config/claudeEffortCatalog.js";
+
 export const DEFAULT_SYSTEMONE_ROUTER_MODEL = "oc/jev-1.13-free";
 export const DEFAULT_SYSTEMONE_TIMEOUT_MS = 8000;
 export const MAX_STATE_CHARS = 2000;
@@ -335,4 +337,86 @@ export function isToolContinuation(body) {
   if (last.role === "user" && Array.isArray(last.content) && last.content.length > 0
       && last.content.every((p) => p?.type === "tool_result")) return true;
   return false;
+}
+
+// ─── Catalog routing (hark) ─────────────────────────────────────────────────
+// Every combo member is a model × effort described with its Artificial Analysis
+// numbers. The decider picks one; when it is unsure, the probability-weighted
+// expected index picks the cheapest member that reaches it.
+
+
+export const CATALOG_INSTRUCTIONS =
+  "Escolha a opção que vai fazer ESTA última mensagem do usuário bem feita gastando o mínimo: a mais barata e rápida que dá conta. " +
+  "Conversa, saudação e pergunta simples não precisam de modelo forte. Suba de nível só quando a tarefa exige (código grande, depuração, plano longo, análise profunda, risco alto). " +
+  `Os números vêm do ${CATALOG_SOURCE}: índice maior é mais capaz, custo e minutos maiores são piores.`;
+
+/** Criteria map for the decider: member id → description (falls back to the id). */
+export function buildCatalogCriteria(models) {
+  const dominated = dominatedMembers(models);
+  const criteria = {};
+  for (const m of models || []) {
+    if (typeof m !== "string" || !m.trim()) continue;
+    const d = describeCatalogMember(m);
+    criteria[m] = d
+      ? (dominated.has(m) ? `${d} Atenção: outra opção desta lista faz o mesmo ou melhor por menos.` : d)
+      : `Modelo ${m}.`;
+  }
+  return criteria;
+}
+
+/** Fallback order after `choice`: other families first (a refusal is per model), nearest index first. */
+export function orderCatalogFallback(models, choice) {
+  const c = catalogEntry(choice);
+  const rest = (models || []).filter((m) => m !== choice);
+  if (!c) return [choice, ...rest];
+  const key = (m) => {
+    const e = catalogEntry(m);
+    if (!e) return [2, 999];
+    const sameFamily = e.base === c.base ? 1 : 0;
+    // prefer stronger-or-equal (small penalty below), nearest index first
+    const dist = e.index >= c.index ? e.index - c.index : (c.index - e.index) + 0.5;
+    return [sameFamily, dist];
+  };
+  rest.sort((a, b) => { const ka = key(a), kb = key(b); return ka[0] - kb[0] || ka[1] - kb[1]; });
+  return [choice, ...rest];
+}
+
+/** Cheapest member whose index reaches `target` (or the strongest when none does). */
+export function cheapestReaching(models, target) {
+  const entries = (models || []).map(catalogEntry).filter(Boolean);
+  if (!entries.length) return null;
+  const ok = entries.filter((e) => e.index >= target).sort((a, b) => a.cost - b.cost);
+  return (ok[0] || entries.sort((a, b) => b.index - a.index)[0]).model;
+}
+
+/**
+ * Decide the member from the decider's answer:
+ * - top probability ≥ threshold → that member;
+ * - else probability-weighted expected index → cheapest member reaching it;
+ * - no answer → `fallbackModel` (or the cheapest member reaching index 42, roughly Sonnet high).
+ */
+export function catalogRouteToChoice(models, route, { threshold = 0.5, fallbackModel = null } = {}) {
+  const known = (models || []).filter((m) => catalogEntry(m));
+  let choice = null, how = "sem resposta", expected = null;
+  const conf = typeof route?.confidence === "number" ? route.confidence : null;
+  if (route?.choice && models.includes(route.choice) && (conf === null || conf >= threshold)) {
+    choice = route.choice; how = "decider";
+  } else if (route?.probabilities && known.length) {
+    let sum = 0, acc = 0;
+    for (const m of known) {
+      const p = Number(route.probabilities[m]) || 0;
+      sum += p; acc += p * catalogEntry(m).index;
+    }
+    if (sum > 0) {
+      expected = acc / sum;
+      choice = cheapestReaching(known, expected - 1);
+      how = "média ponderada";
+    }
+  }
+  if (!choice && route?.choice && models.includes(route.choice)) { choice = route.choice; how = "decider (confiança baixa)"; }
+  if (!choice) {
+    choice = (fallbackModel && models.includes(fallbackModel)) ? fallbackModel : (cheapestReaching(known, 42) || models[0]);
+    how = how === "sem resposta" ? "padrão" : how;
+  }
+  return { choice, how, expected, confidence: conf, ordered: orderCatalogFallback(models, choice) };
 }

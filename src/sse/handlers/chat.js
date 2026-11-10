@@ -160,7 +160,7 @@ export async function handleChat(request, clientRawRequest = null) {
             models: m,
             routerModel: comboCfg.routerModel,
             log,
-            mode: comboCfg.smartPolicy === "complexity" ? "complexity" : "model",
+            mode: ["complexity", "catalog"].includes(comboCfg.smartPolicy) ? comboCfg.smartPolicy : "model",
           })
         : null,
     });
@@ -255,7 +255,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               body: b,
               models: m,
               routerModel: comboCfg.routerModel,
-              mode: comboCfg.smartPolicy === "complexity" ? "complexity" : "model",
+              mode: ["complexity", "catalog"].includes(comboCfg.smartPolicy) ? comboCfg.smartPolicy : "model",
               log,
             })
           : null,
