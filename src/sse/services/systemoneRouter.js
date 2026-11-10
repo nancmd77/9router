@@ -9,6 +9,8 @@ import {
   buildChoiceCriteria,
   parseSystemOneRouteAnswer,
   COMPLEXITY_CRITERIA,
+  buildCatalogCriteria,
+  CATALOG_INSTRUCTIONS,
 } from "open-sse/services/systemoneRouter.js";
 
 /**
@@ -48,7 +50,8 @@ export async function resolveSmartChoice({
   }
 
   const isComplexity = mode === "complexity";
-  const criteria = isComplexity ? { ...COMPLEXITY_CRITERIA } : buildChoiceCriteria(models);
+  const isCatalog = mode === "catalog";
+  const criteria = isComplexity ? { ...COMPLEXITY_CRITERIA } : isCatalog ? buildCatalogCriteria(models) : buildChoiceCriteria(models);
   if (Object.keys(criteria).length === 0) return null;
 
   try {
@@ -72,7 +75,7 @@ export async function resolveSmartChoice({
       questions: {
         route: {
           type: "choice",
-          instructions: isComplexity
+          instructions: isCatalog ? CATALOG_INSTRUCTIONS : isComplexity
             ? "Classify how complex this latest request is for an AI agent to handle well: simples, normal or pesado. Judge the work the request needs, not its length."
             : "Which of these configured models is the most appropriate for this request?",
           criteria,

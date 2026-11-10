@@ -31,7 +31,7 @@ export default function SmartPolicyModal({
   }, [isOpen, currentPolicy, currentThreshold]);
 
   const handleSave = () => {
-    const finalThreshold = (selectedPolicy === "custom" || selectedPolicy === "complexity")
+    const finalThreshold = ["custom", "complexity", "catalog"].includes(selectedPolicy)
       ? threshold / 100
       : selectedPolicy === "smart"
         ? 0.8
@@ -78,6 +78,14 @@ export default function SmartPolicyModal({
       badgeVariant: "success",
       icon: "stairs",
       desc: "Classifies every new user message as simple, normal or heavy and sends it to that tier's member (e.g. Haiku, Sonnet, Opus/Fable). Tool loops keep the chosen model; below the threshold it uses the normal tier. Refusals fail over to the next member.",
+    },
+    {
+      id: "catalog",
+      title: "Model × Effort Catalog",
+      badge: `Benchmarks · ≥${threshold}%`,
+      badgeVariant: "success",
+      icon: "leaderboard",
+      desc: "Each member is a model with an effort, e.g. claude-sonnet-5-5(high). The decider reads every option with its Artificial Analysis score, cost and time per task, and picks the cheapest one that handles the new message. When unsure, the probability-weighted score picks the cheapest member that reaches it. Tool loops keep the choice; refusals fail over to another family.",
     },
     {
       id: "custom",
@@ -149,7 +157,7 @@ export default function SmartPolicyModal({
                 </p>
 
                 {/* Custom Threshold Slider & Chips */}
-                {(p.id === "custom" || p.id === "complexity") && isSelected && (
+                {["custom", "complexity", "catalog"].includes(p.id) && isSelected && (
                   <div
                     className="mt-3 pl-6 pt-3 border-t border-border/40 flex flex-col gap-2.5"
                     onClick={(e) => e.stopPropagation()}

@@ -16,6 +16,8 @@ import {
   tierRouteToChoice,
   isToolContinuation,
   orderModelsByTier,
+  catalogRouteToChoice,
+  orderCatalogFallback,
 } from "./systemoneRouter.js";
 
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
@@ -392,7 +394,8 @@ export async function handleComboChat({
       if (Number.isFinite(custom) && custom > 0) switchThreshold = custom;
     }
 
-    const isComplexity = policy === "complexity";
+    const isCatalog = policy === "catalog";
+    const isComplexity = policy === "complexity" || isCatalog;
     complexityMode = isComplexity;
 
     if (isComplexity) {
@@ -403,19 +406,28 @@ export async function handleComboChat({
       const tierThreshold = Number.isFinite(ct) && ct > 0 && ct < 1 ? ct : 0.5;
       const sticky = sessionId ? getStickyComboModel(comboName, sessionId, models) : null;
       if (sticky && isToolContinuation(body)) {
-        rotatedModels = [sticky, ...orderModelsByTier(models.filter((m) => m !== sticky), "normal")];
+        rotatedModels = isCatalog
+          ? orderCatalogFallback(models, sticky)
+          : [sticky, ...orderModelsByTier(models.filter((m) => m !== sticky), "normal")];
         activeStickyModel = sticky;
         log.info("COMBO", `smart-router [complexity] tool loop, kept ${sticky}`);
       } else if (typeof resolveSmartChoice === "function") {
         let picked = null;
+        let route = null;
         try {
-          picked = tierRouteToChoice(models, await resolveSmartChoice(body, models), { threshold: tierThreshold });
+          route = await resolveSmartChoice(body, models);
         } catch (err) {
-          log.warn("COMBO", `smart-router [complexity] error`, { error: err?.message || String(err) });
+          log.warn("COMBO", `smart-router [${policy}] error`, { error: err?.message || String(err) });
         }
-        if (!picked) picked = tierRouteToChoice(models, { choice: "normal", confidence: null }, { threshold: tierThreshold });
+        if (isCatalog) {
+          picked = catalogRouteToChoice(models, route, { threshold: tierThreshold });
+          log.info("COMBO", `smart-router [catalog] ${picked.how} (confidence: ${picked.confidence ?? "N/A"}${picked.expected != null ? `, índice esperado ${picked.expected.toFixed(1)}` : ""}) → ${picked.choice}`);
+        } else {
+          picked = tierRouteToChoice(models, route, { threshold: tierThreshold })
+            || tierRouteToChoice(models, { choice: "normal", confidence: null }, { threshold: tierThreshold });
+          log.info("COMBO", `smart-router [complexity] ${picked.routerTier ?? "sem resposta"} (confidence: ${picked.confidence ?? "N/A"}) → ${picked.tier} → ${picked.choice}`);
+        }
         rotatedModels = picked.ordered;
-        log.info("COMBO", `smart-router [complexity] ${picked.routerTier ?? "sem resposta"} (confidence: ${picked.confidence ?? "N/A"}) → ${picked.tier} → ${picked.choice}`);
         if (sessionId) {
           setStickyComboModel(comboName, sessionId, picked.choice);
           activeStickyModel = picked.choice;
